@@ -64,7 +64,7 @@ func (t *testTracker) r(openErr error, closeErr error) *testResource {
 	}
 }
 
-func TestS_PushFn(t *testing.T) {
+func TestAddOpenFn(t *testing.T) {
 	t.Run("golden", func(t *testing.T) {
 		assert := assertPkg.New(t)
 
@@ -84,10 +84,12 @@ func TestS_PushFn(t *testing.T) {
 
 		assert.NoError(st.Close())
 
+		// Assert that all resources were closed in the
+		// correct order.
 		assert.Equal([]*testResource{rD, rC, rB, rA}, tt.trace)
 	})
 
-	t.Run("errorOpen", func(t *testing.T) {
+	t.Run("error", func(t *testing.T) {
 		assert := assertPkg.New(t)
 
 		var (
@@ -121,15 +123,47 @@ func TestS_PushFn(t *testing.T) {
 		// assert A was closed now.
 		assert.True(rA.closeCalled)
 
-		// assert B was not closed since open failed.
+		// assert B was not closed since opening B failed.
 		assert.False(rB.closeCalled)
 
-		// assert C was not closed since B open failed.
+		// assert C was not opened and not closed since B open failed.
 		assert.False(rC.openCalled)
 		assert.False(rC.closeCalled)
 	})
+}
 
-	t.Run("errorClose", func(t *testing.T) {
+func TestClose(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		// Closing a nil exitstack.S should not cause any errors.
+		var st exitstack.S
+
+		assertPkg.Nil(t, st)
+		assertPkg.NoError(t, st.Close())
+	})
+
+	t.Run("defer set to nil", func(t *testing.T) {
+		// Closing a nil exitstack.S in defer that was set to nil
+		// before should not close any open resource.
+		var (
+			st exitstack.S
+			tr testTracker
+		)
+
+		r := tr.r(nil, nil)
+
+		func() {
+			defer st.Close()
+
+			_, err := exitstack.Open(&st, r.openFn)
+			assertPkg.NoError(t, err)
+
+			st = nil
+		}()
+
+		assertPkg.False(t, r.closeCalled)
+	})
+
+	t.Run("error", func(t *testing.T) {
 		assert := assertPkg.New(t)
 
 		var (
@@ -139,43 +173,22 @@ func TestS_PushFn(t *testing.T) {
 
 		rA := tr.r(nil, nil)
 		rB := tr.r(nil, syscall.EIO)
-		rC := tr.r(fs.ErrNotExist, nil)
+		rC := tr.r(nil, nil)
 
 		err := st.AddOpenFn(rA.openFn, rB.openFn, rC.openFn)
+		assert.NoError(err)
 
-		// Ensure no error is lost.
-		assert.Equal([]error{
-			fs.ErrNotExist,
-			syscall.EIO,
-		}, multierr.Errors(err))
+		// Assert no error is lost.
+		err = st.Close()
+		assert.Equal([]error{syscall.EIO}, multierr.Errors(err))
+
+		// Assert that all close functions have been called
+		// regardless of any previous close function returning
+		// an error.
+		assert.True(rA.closeCalled)
+		assert.True(rB.closeCalled)
+		assert.True(rC.closeCalled)
 	})
-}
-
-func TestS_CloseEmpty(t *testing.T) {
-	var st exitstack.S
-
-	assertPkg.Nil(t, st)
-	assertPkg.NoError(t, st.Close())
-}
-
-func TestS_CloseEmptyDefer(t *testing.T) {
-	var (
-		st exitstack.S
-		tr testTracker
-	)
-
-	r := tr.r(nil, nil)
-
-	func() {
-		defer st.Close()
-
-		_, err := exitstack.Open(&st, r.openFn)
-		assertPkg.NoError(t, err)
-
-		st = nil
-	}()
-
-	assertPkg.False(t, r.closeCalled)
 }
 
 func TestS_PushCloser(t *testing.T) {
