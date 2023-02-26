@@ -65,15 +65,17 @@ type OpenFn[T any] func() (T, error)
 //
 // AddOpenFn iterates through all [exitstack.OpenFn] functions in fns,
 // calls each function in the order they were passed and adds the returned
-// [io.Closer] instances to the exit stack in reversed order in case of success.
+// [io.Closer] instances to the exit stack in case of their success.
 //
-// If any [exitstack.OpenFn] function returns an error, the entire
-// exit stack will be unwound and the accumulated errors will be returned.
+// If any [exitstack.OpenFn] function returns an error, no further
+// [exitstack.OpenFn] function will be called and the last error will
+// be returned. Make sure to call [exitstack.S.Close] at the end of your
+// function through the *defer* pattern or any other means.
 func (s *S) AddOpenFn(fns ...OpenFn[io.Closer]) error {
 	for _, fn := range fns {
 		closer, err := fn()
 		if err != nil {
-			return multierr.Append(err, s.Close())
+			return err
 		}
 
 		s.add(closer)

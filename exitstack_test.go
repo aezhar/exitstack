@@ -104,15 +104,27 @@ func TestS_PushFn(t *testing.T) {
 
 		assert.ErrorIs(err, fs.ErrNotExist)
 
-		// assert A was opened and closed.
+		// assert A was opened but not closed yet.
 		assert.True(rA.openCalled)
-		assert.True(rA.closeCalled)
+		assert.False(rA.closeCalled)
 
 		// assert B was opened but not closed since open failed.
 		assert.True(rB.openCalled)
 		assert.False(rB.closeCalled)
 
 		// assert C was not opened and not closed since B open failed.
+		assert.False(rC.openCalled)
+		assert.False(rC.closeCalled)
+
+		assert.NoError(st.Close())
+
+		// assert A was closed now.
+		assert.True(rA.closeCalled)
+
+		// assert B was not closed since open failed.
+		assert.False(rB.closeCalled)
+
+		// assert C was not closed since B open failed.
 		assert.False(rC.openCalled)
 		assert.False(rC.closeCalled)
 	})
@@ -137,6 +149,33 @@ func TestS_PushFn(t *testing.T) {
 			syscall.EIO,
 		}, multierr.Errors(err))
 	})
+}
+
+func TestS_CloseEmpty(t *testing.T) {
+	var st exitstack.S
+
+	assertPkg.Nil(t, st)
+	assertPkg.NoError(t, st.Close())
+}
+
+func TestS_CloseEmptyDefer(t *testing.T) {
+	var (
+		st exitstack.S
+		tr testTracker
+	)
+
+	r := tr.r(nil, nil)
+
+	func() {
+		defer st.Close()
+
+		_, err := exitstack.Open(&st, r.openFn)
+		assertPkg.NoError(t, err)
+
+		st = nil
+	}()
+
+	assertPkg.False(t, r.closeCalled)
 }
 
 func TestS_PushCloser(t *testing.T) {
