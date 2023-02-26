@@ -199,7 +199,7 @@ func TestClose(t *testing.T) {
 	})
 }
 
-func TestS_PushCloser(t *testing.T) {
+func TestPushCloser(t *testing.T) {
 	assert := assertPkg.New(t)
 
 	var (
@@ -221,7 +221,7 @@ func TestS_PushCloser(t *testing.T) {
 	assert.Equal([]*testResource{rD, rC, rB, rA}, tt.trace)
 }
 
-func TestS_PushCb(t *testing.T) {
+func TestPushCb(t *testing.T) {
 	var called bool
 	var st exitstack.S
 
