@@ -21,7 +21,6 @@
 package exitstack
 
 import (
-	"context"
 	"io"
 
 	"go.uber.org/multierr"
@@ -30,6 +29,11 @@ import (
 // S is an exit stack that allows the combination of cleanup functions,
 // useful for those that are optional, conditional and/or driven by
 // input data.
+//
+// Cleanup functions will be called in the reversed order they were
+// added to the exit stack, meaning that the first cleanup function
+// added to the exit stack will be the last cleanup function to be
+// called, when the stack is unwounded.
 type S []io.Closer
 
 // Close closes all elements on the exit stack and clears it.
@@ -53,7 +57,7 @@ func (s *S) add(c io.Closer) {
 
 // An OpenFn function opens a resource and returns a handler to
 // the resource or an error.
-type OpenFn[T any] func(ctx context.Context) (T, error)
+type OpenFn[T any] func() (T, error)
 
 // AddOpenFn adds the result of all [exitstack.OpenFn] functions to the exit stack.
 //
@@ -63,19 +67,15 @@ type OpenFn[T any] func(ctx context.Context) (T, error)
 //
 // If any [exitstack.OpenFn] function returns an error, the entire
 // exit stack will be unwound and the accumulated errors will be returned.
-func (s *S) AddOpenFn(ctx context.Context, fns ...OpenFn[io.Closer]) error {
+func (s *S) AddOpenFn(fns ...OpenFn[io.Closer]) error {
 	for _, fn := range fns {
-		closer, err := fn(ctx)
+		closer, err := fn()
 		if err != nil {
 			return multierr.Append(err, s.Close())
 		}
 
 		if closer != nil && closer != (io.Closer)(nil) {
 			s.add(closer)
-		}
-
-		if ctx.Err() != nil {
-			return multierr.Append(ctx.Err(), s.Close())
 		}
 	}
 	return nil
@@ -104,24 +104,18 @@ func (s *S) AddCb(fn func() error) {
 	}
 }
 
-// OpenWithContext opens a given resource within a given [context.Context].
+// Open calls fn to open a given resource and returns the resource
+// with its original type after adding it to the exit stack in case
+// fn returns no error.
 //
-// OpenWithContext passes the given [exitstack.OpenFn] function in fn
-// through the [exitstack.S.AddOpenFn] method of the [exitstack.S]
+// Open passes the given [exitstack.OpenFn] function in fn
+// through the [exitstack.S.AddOpenFn] function of the [exitstack.S]
 // instance in s and returns the original resource.
-func OpenWithContext[T io.Closer](s *S, ctx context.Context, fn OpenFn[T]) (out T, err error) {
-	err = s.AddOpenFn(ctx, func(ctx context.Context) (io.Closer, error) {
-		out, err = fn(ctx)
+func Open[T io.Closer](s *S, fn OpenFn[T]) (out T, err error) {
+	err = s.AddOpenFn(func() (io.Closer, error) {
+		// Assign out and err to the outer function results.
+		out, err = fn()
 		return out, err
 	})
 	return
-}
-
-// Open calls fn and returns the resource after adding it to the exit stack.
-//
-// See [exitstack.OpenWithContext] for more details.
-func Open[T io.Closer](s *S, fn func() (T, error)) (T, error) {
-	return OpenWithContext(s, context.Background(), func(context.Context) (T, error) {
-		return fn()
-	})
 }

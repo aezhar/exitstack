@@ -17,7 +17,6 @@
 package exitstack_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -48,7 +47,7 @@ func (f *testResource) Close() error {
 	return f.closeErr
 }
 
-func (f *testResource) openFn(context.Context) (io.Closer, error) {
+func (f *testResource) openFn() (io.Closer, error) {
 	f.openCalled = true
 	return f, f.openErr
 }
@@ -79,9 +78,9 @@ func TestS_PushFn(t *testing.T) {
 		rC := tt.r(nil, nil)
 		rD := tt.r(nil, nil)
 
-		assert.NoError(st.AddOpenFn(context.TODO(), rA.openFn))
-		assert.NoError(st.AddOpenFn(context.TODO(), rB.openFn, rC.openFn))
-		assert.NoError(st.AddOpenFn(context.TODO(), rD.openFn))
+		assert.NoError(st.AddOpenFn(rA.openFn))
+		assert.NoError(st.AddOpenFn(rB.openFn, rC.openFn))
+		assert.NoError(st.AddOpenFn(rD.openFn))
 
 		assert.NoError(st.Close())
 
@@ -100,8 +99,8 @@ func TestS_PushFn(t *testing.T) {
 		rB := tr.r(fs.ErrNotExist, nil)
 		rC := tr.r(nil, nil)
 
-		assert.NoError(st.AddOpenFn(context.TODO(), rA.openFn))
-		err := st.AddOpenFn(context.TODO(), rB.openFn, rC.openFn)
+		assert.NoError(st.AddOpenFn(rA.openFn))
+		err := st.AddOpenFn(rB.openFn, rC.openFn)
 
 		assert.ErrorIs(err, fs.ErrNotExist)
 
@@ -130,37 +129,13 @@ func TestS_PushFn(t *testing.T) {
 		rB := tr.r(nil, syscall.EIO)
 		rC := tr.r(fs.ErrNotExist, nil)
 
-		err := st.AddOpenFn(context.TODO(), rA.openFn, rB.openFn, rC.openFn)
+		err := st.AddOpenFn(rA.openFn, rB.openFn, rC.openFn)
 
 		// Ensure no error is lost.
 		assert.Equal([]error{
 			fs.ErrNotExist,
 			syscall.EIO,
 		}, multierr.Errors(err))
-	})
-
-	t.Run("contextAbort", func(t *testing.T) {
-		assert := assertPkg.New(t)
-
-		var (
-			st exitstack.S
-			tr testTracker
-		)
-
-		rA := tr.r(nil, nil)
-		rB := tr.r(nil, nil)
-
-		ctx, cancelFn := context.WithCancel(context.TODO())
-		cancelFn()
-
-		err := st.AddOpenFn(ctx, rA.openFn, rB.openFn)
-		assert.ErrorIs(err, context.Canceled)
-
-		assert.True(rA.openCalled)
-		assert.True(rA.closeCalled)
-
-		assert.False(rB.openCalled)
-		assert.False(rB.closeCalled)
 	})
 }
 
