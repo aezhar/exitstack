@@ -21,9 +21,8 @@
 package exitstack
 
 import (
+	"errors"
 	"io"
-
-	"go.uber.org/multierr"
 )
 
 // S is an exit stack that allows the combination of cleanup functions,
@@ -42,11 +41,14 @@ type S []io.Closer
 // to when they were added, clears the exit stack by assigning nil
 // to the slice and returns any encountered errors.
 func (s *S) Close() (err error) {
-	if s != nil {
-		for i := len(*s) - 1; i >= 0; i-- {
-			err = multierr.Append(err, (*s)[i].Close())
+	if n := len(*s); n > 0 {
+		errs := make([]error, 0, n)
+		for i := n - 1; i >= 0; i-- {
+			errs = append(errs, (*s)[i].Close())
 		}
 		*s = nil
+
+		err = errors.Join(errs...)
 	}
 	return
 }

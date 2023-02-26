@@ -26,7 +26,6 @@ import (
 	"testing"
 
 	assertPkg "github.com/stretchr/testify/assert"
-	"go.uber.org/multierr"
 
 	"github.com/aezhar/exitstack"
 )
@@ -173,14 +172,22 @@ func TestClose(t *testing.T) {
 
 		rA := tr.r(nil, nil)
 		rB := tr.r(nil, syscall.EIO)
-		rC := tr.r(nil, nil)
+		rC := tr.r(nil, syscall.EBADF)
+		rD := tr.r(nil, nil)
 
-		err := st.AddOpenFn(rA.openFn, rB.openFn, rC.openFn)
+		err := st.AddOpenFn(rA.openFn, rB.openFn, rC.openFn, rD.openFn)
 		assert.NoError(err)
 
 		// Assert no error is lost.
 		err = st.Close()
-		assert.Equal([]error{syscall.EIO}, multierr.Errors(err))
+
+		assert.ErrorContains(err, "bad file descriptor")
+		assert.ErrorContains(err, "input/output error")
+
+		var errs interface{ Unwrap() []error }
+		if assert.True(errors.As(err, &errs)) {
+			assert.Equal([]error{syscall.EBADF, syscall.EIO}, errs.Unwrap())
+		}
 
 		// Assert that all close functions have been called
 		// regardless of any previous close function returning
@@ -188,6 +195,7 @@ func TestClose(t *testing.T) {
 		assert.True(rA.closeCalled)
 		assert.True(rB.closeCalled)
 		assert.True(rC.closeCalled)
+		assert.True(rD.closeCalled)
 	})
 }
 
