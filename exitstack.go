@@ -52,7 +52,9 @@ func (s *S) Close() (err error) {
 }
 
 func (s *S) add(c io.Closer) {
-	*s = append(*s, c)
+	if c != nil && c != (io.Closer)(nil) {
+		*s = append(*s, c)
+	}
 }
 
 // An OpenFn function opens a resource and returns a handler to
@@ -74,9 +76,7 @@ func (s *S) AddOpenFn(fns ...OpenFn[io.Closer]) error {
 			return multierr.Append(err, s.Close())
 		}
 
-		if closer != nil && closer != (io.Closer)(nil) {
-			s.add(closer)
-		}
+		s.add(closer)
 	}
 	return nil
 }
@@ -84,9 +84,7 @@ func (s *S) AddOpenFn(fns ...OpenFn[io.Closer]) error {
 // AddCloser adds any given [io.Closer] instance to the exit stack.
 func (s *S) AddCloser(closers ...io.Closer) {
 	for _, closer := range closers {
-		if closer != nil && closer != (io.Closer)(nil) {
-			s.add(closer)
-		}
+		s.add(closer)
 	}
 }
 
